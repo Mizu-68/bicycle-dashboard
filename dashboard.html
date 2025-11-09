@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>不審行動検知ダッシュボード</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #f8fafc;
+      margin: 20px;
+      color: #333;
+    }
+    h1 { text-align: center; color: #0078D7; }
+    canvas { max-width: 900px; margin: 40px auto; display: block; }
+    table {
+      border-collapse: collapse;
+      width: 95%;
+      margin: 30px auto;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+    th, td {
+      padding: 10px 15px;
+      border-bottom: 1px solid #ddd;
+      text-align: center;
+    }
+    th {
+      background: #0078D7;
+      color: white;
+    }
+    tr:hover { background: #f0f8ff; }
+  </style>
+</head>
+<body>
+
+  <h1>🚨 不審行動検知ダッシュボード</h1>
+
+  <canvas id="chart"></canvas>
+
+  <table id="logTable">
+    <thead>
+      <tr>
+        <th>日時</th>
+        <th>Object ID</th>
+        <th>動作</th>
+        <th>ゾーン</th>
+        <th>滞留時間(s)</th>
+        <th>確信度</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    const API_URL = "https://z07k43psfl.execute-api.ap-northeast-1.amazonaws.com";  // ← あなたのAPI Gateway URLを貼る
+
+    async function loadData() {
+      const res = await fetch(API_URL);
+      const data = await res.json();
+
+      // 日ごとの件数集計
+      const counts = {};
+      data.forEach(item => {
+        const date = item.timestamp.split(" ")[0];
+        counts[date] = (counts[date] || 0) + 1;
+      });
+
+      // 棒グラフ描画
+      const ctx = document.getElementById('chart');
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: Object.keys(counts),
+          datasets: [{
+            label: '検知件数（日ごと）',
+            data: Object.values(counts),
+            backgroundColor: 'rgba(0, 120, 215, 0.7)'
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y: { beginAtZero: true, ticks: { stepSize: 1 } }
+          }
+        }
+      });
+
+      // 検知ログ一覧表示
+      const tbody = document.querySelector("#logTable tbody");
+      data.sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
+      data.forEach(d => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${d.timestamp}</td>
+          <td>${d.object_id ?? '-'}</td>
+          <td>${d.action ?? '-'}</td>
+          <td>${d.zone_id ?? '-'}</td>
+          <td>${d.duration_sec ?? '-'}</td>
+          <td>${d.confidence ?? '-'}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    loadData();
+  </script>
+
+</body>
+</html>
