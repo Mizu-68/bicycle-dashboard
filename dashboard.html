@@ -59,6 +59,7 @@
     async function loadData() {
       const res = await fetch(API_URL);
       const data = await res.json();
+      console.log("📦 APIから取得したデータ:", data);
 
       // 日ごとの件数集計
       const counts = {};
