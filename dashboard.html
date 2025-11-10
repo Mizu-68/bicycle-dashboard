@@ -54,55 +54,70 @@
   </table>
 
   <script>
-    const API_URL = "https://z07k43psfl.execute-api.ap-northeast-1.amazonaws.com/";  // ← あなたのAPI Gateway URLを貼る
+    // ✅ 末尾の「/」は自動的に消す（どちらでも動くように）
+    const API_URL = "https://z07k43psfl.execute-api.ap-northeast-1.amazonaws.com".replace(/\/$/, "");
 
     async function loadData() {
-      const res = await fetch(API_URL);
-      const data = await res.json();
-      console.log("📦 APIから取得したデータ:", data);
+      try {
+        console.log("🌐 APIへ接続中:", API_URL);
+        const res = await fetch(API_URL);
+        if (!res.ok) throw new Error(`HTTPエラー: ${res.status}`);
+        const data = await res.json();
+        console.log("📦 APIから取得したデータ:", data);
 
-      // 日ごとの件数集計
-      const counts = {};
-      data.forEach(item => {
-        const date = item.timestamp.split(" ")[0];
-        counts[date] = (counts[date] || 0) + 1;
-      });
-
-      // 棒グラフ描画
-      const ctx = document.getElementById('chart');
-      new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: Object.keys(counts),
-          datasets: [{
-            label: '検知件数（日ごと）',
-            data: Object.values(counts),
-            backgroundColor: 'rgba(0, 120, 215, 0.7)'
-          }]
-        },
-        options: {
-          responsive: true,
-          scales: {
-            y: { beginAtZero: true, ticks: { stepSize: 1 } }
-          }
+        if (!Array.isArray(data)) {
+          console.warn("⚠️ データ形式が配列ではありません:", data);
+          return;
         }
-      });
 
-      // 検知ログ一覧表示
-      const tbody = document.querySelector("#logTable tbody");
-      data.sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
-      data.forEach(d => {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${d.timestamp}</td>
-          <td>${d.object_id ?? '-'}</td>
-          <td>${d.action ?? '-'}</td>
-          <td>${d.zone_id ?? '-'}</td>
-          <td>${d.duration_sec ?? '-'}</td>
-          <td>${d.confidence ?? '-'}</td>
-        `;
-        tbody.appendChild(tr);
-      });
+        // 🗓️ 日ごとの件数集計
+        const counts = {};
+        data.forEach(item => {
+          if (!item.timestamp) return;
+          const date = item.timestamp.split(" ")[0];
+          counts[date] = (counts[date] || 0) + 1;
+        });
+
+        // 📊 棒グラフ描画
+        const ctx = document.getElementById('chart');
+        new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: Object.keys(counts),
+            datasets: [{
+              label: '検知件数（日ごと）',
+              data: Object.values(counts),
+              backgroundColor: 'rgba(0, 120, 215, 0.7)'
+            }]
+          },
+          options: {
+            responsive: true,
+            scales: {
+              y: { beginAtZero: true, ticks: { stepSize: 1 } }
+            }
+          }
+        });
+
+        // 📋 検知ログ一覧表示
+        const tbody = document.querySelector("#logTable tbody");
+        tbody.innerHTML = ""; // 再描画時にリセット
+        data.sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
+        data.forEach(d => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${d.timestamp || '-'}</td>
+            <td>${d.object_id || '-'}</td>
+            <td>${d.action || '-'}</td>
+            <td>${d.zone_id || '-'}</td>
+            <td>${d.duration_sec || '-'}</td>
+            <td>${d.confidence || '-'}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+
+      } catch (err) {
+        console.error("❌ データ取得エラー:", err);
+      }
     }
 
     loadData();
