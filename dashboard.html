@@ -2,142 +2,188 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>不審行動検知ダッシュボード</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     body {
-      font-family: 'Segoe UI', sans-serif;
-      background: #f8fafc;
-      margin: 20px;
-      color: #333;
+      font-family: "Segoe UI", sans-serif;
+      background: #f5f7fb;
+      margin: 0;
+      padding: 20px;
     }
-    h1 { text-align: center; color: #0078D7; }
-    canvas { max-width: 900px; margin: 40px auto; display: block; }
-    table {
-      border-collapse: collapse;
-      width: 95%;
-      margin: 30px auto;
-      background: #fff;
+
+    h1 {
+      text-align: center;
+      color: #333;
+      margin-bottom: 30px;
+    }
+
+    .dashboard {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+
+    .left-panel {
+      flex: 1;
+      margin-right: 30px;
+      background: white;
       border-radius: 10px;
       box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      padding: 15px;
+      max-width: 450px;
+      min-width: 320px;
     }
+
+    .right-panel {
+      flex: 2;
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      padding: 20px;
+      min-width: 400px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
     th, td {
-      padding: 10px 15px;
       border-bottom: 1px solid #ddd;
+      padding: 6px;
       text-align: center;
     }
+
     th {
-      background: #0078D7;
-      color: white;
+      background: #f0f0f0;
+      font-weight: 600;
     }
-    tr:hover { background: #f0f8ff; }
-    .note {
-      text-align: center;
-      color: #555;
-      font-size: 0.9em;
+
+    tr:hover {
+      background: #f9f9f9;
+    }
+
+    canvas {
+      width: 100% !important;
+      height: 400px !important;
+    }
+
+    @media (max-width: 900px) {
+      .dashboard {
+        flex-direction: column;
+      }
+      .left-panel, .right-panel {
+        max-width: 100%;
+        margin-right: 0;
+        margin-bottom: 20px;
+      }
     }
   </style>
 </head>
 <body>
+  <h1>🚲 自転車のダッシュボード</h1>
 
-  <h1>🚨 不審行動検知ダッシュボード</h1>
+  <div class="dashboard">
+    <!-- 左パネル（最新データ一覧） -->
+    <div class="left-panel">
+      <h2>📋 最新の検知一覧（20件）</h2>
+      <table id="data-table">
+        <thead>
+          <tr>
+            <th>時刻</th>
+            <th>ID</th>
+            <th>動作</th>
+            <th>ゾーン</th>
+            <th>移動</th>
+            <th>時間(s)</th>
+            <th>方向</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
 
-  <canvas id="chart"></canvas>
-
-  <div class="note">最新20件の検知ログを表示中</div>
-
-  <table id="logTable">
-    <thead>
-      <tr>
-        <th>日時</th>
-        <th>Object ID</th>
-        <th>動作</th>
-        <th>ゾーン</th>
-        <th>方向</th>
-        <th>ゾーン移動</th>
-        <th>継続時間(s)</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+    <!-- 右パネル（グラフ表示） -->
+    <div class="right-panel">
+      <h2>📈 日別検知件数</h2>
+      <canvas id="dailyChart"></canvas>
+    </div>
+  </div>
 
   <script>
-    const API_URL = "https://z07k43psfl.execute-api.ap-northeast-1.amazonaws.com".replace(/\/$/, "");
-    const MAX_DISPLAY = 20; // ← 表示件数をここで調整（10でもOK）
+    const API_URL = "https://z07k43psfl.execute-api.ap-northeast-1.amazonaws.com/";
 
     async function loadData() {
       try {
         console.log("🌐 APIへ接続中:", API_URL);
         const res = await fetch(API_URL);
-        if (!res.ok) throw new Error(`HTTPエラー: ${res.status}`);
         const data = await res.json();
         console.log("📦 APIから取得したデータ:", data);
 
-        if (!Array.isArray(data)) {
-          console.warn("⚠️ データ形式が配列ではありません:", data);
-          return;
-        }
-
-        // 🗓️ 日ごとの件数集計
-        const counts = {};
-        data.forEach(item => {
-          if (!item.timestamp) return;
-          const date = item.timestamp.split(" ")[0];
-          counts[date] = (counts[date] || 0) + 1;
-        });
-
-        // 📊 棒グラフ描画
-        const ctx = document.getElementById('chart');
-        new Chart(ctx, {
-          type: 'bar',
-          data: {
-            labels: Object.keys(counts),
-            datasets: [{
-              label: '検知件数（日ごと）',
-              data: Object.values(counts),
-              backgroundColor: 'rgba(0, 120, 215, 0.7)'
-            }]
-          },
-          options: {
-            responsive: true,
-            scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
-          }
-        });
-
-        // 📋 検知ログ一覧（最新順でMAX_DISPLAY件）
-        const tbody = document.querySelector("#logTable tbody");
+        // ---- 最新20件のみ表示 ----
+        const latestData = data.slice(-20).reverse();
+        const tbody = document.querySelector("#data-table tbody");
         tbody.innerHTML = "";
 
-        const sorted = [...data].sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
-        const latest = sorted.slice(0, MAX_DISPLAY);
-
-        latest.forEach(d => {
+        latestData.forEach(d => {
           const tr = document.createElement("tr");
-
-          // direction の見やすい表記
-          let directionText = d.direction || "-";
-          if (directionText === "1" || directionText === "+1") directionText = "→";
-          else if (directionText === "-1") directionText = "←";
-
           tr.innerHTML = `
-            <td>${d.timestamp || '-'}</td>
-            <td>${d.object_id || '-'}</td>
-            <td>${d.action || '-'}</td>
-            <td>${d.zone_id || '-'}</td>
-            <td>${directionText}</td>
-            <td>${d.zone_transition || '-'}</td>
-            <td>${d.duration_sec ? parseFloat(d.duration_sec).toFixed(1) : '-'}</td>
+            <td>${d.timestamp || "-"}</td>
+            <td>${d.object_id || "-"}</td>
+            <td>${d.action || "-"}</td>
+            <td>${d.zone_id || "-"}</td>
+            <td>${d.zone_transition || "-"}</td>
+            <td>${d.duration_sec ? parseFloat(d.duration_sec).toFixed(1) : "-"}</td>
+            <td>${d.direction || "-"}</td>
           `;
           tbody.appendChild(tr);
         });
 
-      } catch (err) {
-        console.error("❌ データ取得エラー:", err);
+        // ---- 日別検知数を集計 ----
+        const dailyCount = {};
+        data.forEach(d => {
+          if (d.timestamp) {
+            const date = d.timestamp.split(" ")[0];
+            dailyCount[date] = (dailyCount[date] || 0) + 1;
+          }
+        });
+
+        // 日付順にソート
+        const sortedDates = Object.keys(dailyCount).sort((a, b) => new Date(a) - new Date(b));
+        const sortedCounts = sortedDates.map(d => dailyCount[d]);
+
+        // ---- 棒グラフ描画 ----
+        const ctx = document.getElementById("dailyChart").getContext("2d");
+        new Chart(ctx, {
+          type: "bar",
+          data: {
+            labels: sortedDates,
+            datasets: [{
+              label: "日別検知件数",
+              data: sortedCounts,
+              backgroundColor: "rgba(54, 162, 235, 0.6)",
+              borderColor: "rgba(54, 162, 235, 1)",
+              borderWidth: 1
+            }]
+          },
+          options: {
+            responsive: true,
+            scales: {
+              y: { beginAtZero: true }
+            }
+          }
+        });
+
+      } catch (e) {
+        console.error("❌ データ取得エラー:", e);
       }
     }
 
     loadData();
   </script>
-
 </body>
 </html>
