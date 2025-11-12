@@ -46,15 +46,15 @@
         <th>Object ID</th>
         <th>動作</th>
         <th>ゾーン</th>
+        <th>方向</th>
+        <th>ゾーン移動</th>
         <th>継続時間(s)</th>
-        <th>確信度</th>
       </tr>
     </thead>
     <tbody></tbody>
   </table>
 
   <script>
-    // ✅ 末尾の「/」は自動的に消す（どちらでも動くように）
     const API_URL = "https://z07k43psfl.execute-api.ap-northeast-1.amazonaws.com".replace(/\/$/, "");
 
     async function loadData() {
@@ -92,25 +92,31 @@
           },
           options: {
             responsive: true,
-            scales: {
-              y: { beginAtZero: true, ticks: { stepSize: 1 } }
-            }
+            scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
           }
         });
 
         // 📋 検知ログ一覧表示
         const tbody = document.querySelector("#logTable tbody");
-        tbody.innerHTML = ""; // 再描画時にリセット
+        tbody.innerHTML = "";
         data.sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
+
         data.forEach(d => {
           const tr = document.createElement("tr");
+
+          // direction が数値文字列なら「→」「←」に変換
+          let directionText = d.direction || "-";
+          if (directionText === "1" || directionText === "+1") directionText = "→";
+          else if (directionText === "-1") directionText = "←";
+
           tr.innerHTML = `
             <td>${d.timestamp || '-'}</td>
             <td>${d.object_id || '-'}</td>
             <td>${d.action || '-'}</td>
             <td>${d.zone_id || '-'}</td>
-            <td>${d.duration_sec || '-'}</td>
-            <td>${d.confidence || '-'}</td>
+            <td>${directionText}</td>
+            <td>${d.zone_transition || '-'}</td>
+            <td>${d.duration_sec ? parseFloat(d.duration_sec).toFixed(1) : '-'}</td>
           `;
           tbody.appendChild(tr);
         });
