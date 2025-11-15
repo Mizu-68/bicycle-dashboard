@@ -85,7 +85,7 @@
   </style>
 </head>
 <body>
-  <h1>🚲 自転車のダッシュボード</h1>
+  <h1>🚲 不審行動検知ダッシュボード</h1>
 
   <div class="dashboard">
     <!-- 左パネル（最新データ一覧） -->
@@ -115,75 +115,108 @@
   </div>
 
   <script>
-    const API_URL = "https://z07k43psfl.execute-api.ap-northeast-1.amazonaws.com/";
+  const API_URL = "https://z07k43psfl.execute-api.ap-northeast-1.amazonaws.com/";
 
-    async function loadData() {
-      try {
-        console.log("🌐 APIへ接続中:", API_URL);
-        const res = await fetch(API_URL);
-        const data = await res.json();
-        console.log("📦 APIから取得したデータ:", data);
+  async function loadData() {
+    try {
+      const res = await fetch(API_URL);
+      const data = await res.json();
 
-        // ---- 最新20件のみ表示 ----
-        const latestData = data.slice(-20).reverse();
-        const tbody = document.querySelector("#data-table tbody");
-        tbody.innerHTML = "";
+      // ---- 日付別にデータを分類 ----
+      const grouped = {};
+      data.forEach(d => {
+        if (!d.timestamp) return;
+        const date = d.timestamp.split(" ")[0];
+        if (!grouped[date]) grouped[date] = [];
+        grouped[date].push(d);
+      });
 
-        latestData.forEach(d => {
-          const tr = document.createElement("tr");
-          tr.innerHTML = `
-            <td>${d.timestamp || "-"}</td>
-            <td>${d.object_id || "-"}</td>
-            <td>${d.action || "-"}</td>
-            <td>${d.zone_id || "-"}</td>
-            <td>${d.zone_transition || "-"}</td>
-            <td>${d.duration_sec ? parseFloat(d.duration_sec).toFixed(1) : "-"}</td>
-            <td>${d.direction || "-"}</td>
-          `;
-          tbody.appendChild(tr);
+      // ---- 日付タブを生成 ----
+      const dates = Object.keys(grouped).sort((a, b) => new Date(b) - new Date(a)); // 新しい順
+      const tabContainer = document.getElementById("tabs");
+      tabContainer.innerHTML = "";
+
+      dates.forEach((date, idx) => {
+        const btn = document.createElement("button");
+        btn.className = "tab-button";
+        btn.textContent = date;
+        if (idx === 0) btn.classList.add("active");
+
+        btn.addEventListener("click", () => {
+          document.querySelectorAll(".tab-button").forEach(b => b.classList.remove("active"));
+          btn.classList.add("active");
+          renderTable(grouped[date]);
         });
 
-        // ---- 日別検知数を集計 ----
-        const dailyCount = {};
-        data.forEach(d => {
-          if (d.timestamp) {
-            const date = d.timestamp.split(" ")[0];
-            dailyCount[date] = (dailyCount[date] || 0) + 1;
-          }
-        });
+        tabContainer.appendChild(btn);
+      });
 
-        // 日付順にソート
-        const sortedDates = Object.keys(dailyCount).sort((a, b) => new Date(a) - new Date(b));
-        const sortedCounts = sortedDates.map(d => dailyCount[d]);
+      // ---- 初期表示（最新日）----
+      renderTable(grouped[dates[0]]);
 
-        // ---- 棒グラフ描画 ----
-        const ctx = document.getElementById("dailyChart").getContext("2d");
-        new Chart(ctx, {
-          type: "bar",
-          data: {
-            labels: sortedDates,
-            datasets: [{
-              label: "日別検知件数",
-              data: sortedCounts,
-              backgroundColor: "rgba(54, 162, 235, 0.6)",
-              borderColor: "rgba(54, 162, 235, 1)",
-              borderWidth: 1
-            }]
-          },
-          options: {
-            responsive: true,
-            scales: {
-              y: { beginAtZero: true }
-            }
-          }
-        });
-
-      } catch (e) {
-        console.error("❌ データ取得エラー:", e);
+      // ---- グラフ（日別件数）----
+      const dailyCount = {};
+      for (let d of data) {
+        if (!d.timestamp) continue;
+        const date = d.timestamp.split(" ")[0];
+        dailyCount[date] = (dailyCount[date] || 0) + 1;
       }
-    }
+      drawChart(dailyCount);
 
-    loadData();
-  </script>
+    } catch (e) {
+      console.error("❌ データ取得エラー:", e);
+    }
+  }
+
+  // ---- 表の描画処理 ----
+  function renderTable(dayData) {
+    const tbody = document.querySelector("#data-table tbody");
+    tbody.innerHTML = "";
+
+    dayData
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)) // 新しい順
+      .forEach(d => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${d.timestamp || "-"}</td>
+          <td>${d.object_id || "-"}</td>
+          <td>${d.action || "-"}</td>
+          <td>${d.zone_id || "-"}</td>
+          <td>${d.zone_transition || "-"}</td>
+          <td>${d.duration_sec ? parseFloat(d.duration_sec).toFixed(1) : "-"}</td>
+          <td>${d.direction || "-"}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+  }
+
+  // ---- グラフ描画 ----
+  function drawChart(dailyCount) {
+    const sortedDates = Object.keys(dailyCount).sort((a, b) => new Date(a) - new Date(b));
+    const sortedCounts = sortedDates.map(d => dailyCount[d]);
+
+    const ctx = document.getElementById("dailyChart").getContext("2d");
+
+    new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels: sortedDates,
+        datasets: [{
+          label: "日別検知件数",
+          data: sortedCounts,
+          backgroundColor: "rgba(54, 162, 235, 0.6)",
+          borderColor: "rgba(54, 162, 235, 1)",
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+  }
+
+  loadData();
+</script>
 </body>
 </html>
