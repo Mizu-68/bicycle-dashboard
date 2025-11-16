@@ -15,8 +15,20 @@
 
     h1 {
       text-align: center;
+      margin-bottom: 20px;
       color: #333;
-      margin-bottom: 30px;
+    }
+
+    .top-controls {
+      text-align: center;
+      margin-bottom: 25px;
+    }
+
+    input[type="date"] {
+      padding: 8px 12px;
+      border: 1px solid #bbb;
+      border-radius: 6px;
+      font-size: 16px;
     }
 
     .dashboard {
@@ -69,42 +81,7 @@
 
     canvas {
       width: 100% !important;
-      height: 400px !important;
-    }
-
-    /* ---- タブ ---- */
-    #tabs {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 15px;
-      flex-wrap: wrap;
-    }
-
-    .tab-button {
-      padding: 6px 12px;
-      border-radius: 6px;
-      border: 1px solid #999;
-      background: #eee;
-      cursor: pointer;
-      font-size: 14px;
-    }
-
-    .tab-button.active {
-      background: #4da3ff;
-      color: white;
-      font-weight: 600;
-      border-color: #1b6fd2;
-    }
-
-    @media (max-width: 900px) {
-      .dashboard {
-        flex-direction: column;
-      }
-      .left-panel, .right-panel {
-        max-width: 100%;
-        margin-right: 0;
-        margin-bottom: 20px;
-      }
+      height: 350px !important;
     }
   </style>
 </head>
@@ -112,14 +89,17 @@
 
   <h1>🚲 不審行動検知ダッシュボード</h1>
 
+  <!-- 🔥 日付選択カレンダー -->
+  <div class="top-controls">
+    <label>📅 日付を選択：</label>
+    <input type="date" id="datePicker">
+  </div>
+
   <div class="dashboard">
 
-    <!-- 左パネル -->
+    <!-- 左パネル（表） -->
     <div class="left-panel">
-      <h2>📋 日付別データ</h2>
-
-      <!-- 🔥 追加：タブコンテナ -->
-      <div id="tabs"></div>
+      <h2>📋 検知データ</h2>
 
       <table id="data-table">
         <thead>
@@ -137,9 +117,9 @@
       </table>
     </div>
 
-    <!-- 右パネル -->
+    <!-- 右パネル（グラフ） -->
     <div class="right-panel">
-      <h2>📈 日別検知件数</h2>
+      <h2>📈 選択日の件数</h2>
       <canvas id="dailyChart"></canvas>
     </div>
 
@@ -147,71 +127,49 @@
 
   <script>
     const API_URL = "https://z07k43psfl.execute-api.ap-northeast-1.amazonaws.com/";
+    let allData = [];
+    let chart = null;
 
+    // 初回データロード
     async function loadData() {
       try {
         const res = await fetch(API_URL);
-        const data = await res.json();
+        allData = await res.json();
 
-        // ---- 日付ごとに分類 ----
-        const grouped = {};
-        data.forEach(d => {
-          if (!d.timestamp) return;
-          const date = d.timestamp.split(" ")[0];
-          if (!grouped[date]) grouped[date] = [];
-          grouped[date].push(d);
-        });
+        console.log("データ取得:", allData);
 
-        // ---- タブ生成 ----
-        const dates = Object.keys(grouped).sort((a, b) => new Date(b) - new Date(a));
-        const tabContainer = document.getElementById("tabs");
-        tabContainer.innerHTML = "";
+        // 最新日を初期選択
+        const dates = [...new Set(allData.map(d => d.timestamp.split(" ")[0]))];
+        const latest = dates.sort().reverse()[0];
+        document.getElementById("datePicker").value = latest;
 
-        dates.forEach((date, idx) => {
-          const btn = document.createElement("button");
-          btn.className = "tab-button";
-          btn.textContent = date;
-          if (idx === 0) btn.classList.add("active");
-
-          btn.addEventListener("click", () => {
-            document.querySelectorAll(".tab-button").forEach(b => b.classList.remove("active"));
-            btn.classList.add("active");
-            renderTable(grouped[date]);
-          });
-
-          tabContainer.appendChild(btn);
-        });
-
-        // ---- 初期表示 ----
-        renderTable(grouped[dates[0]]);
-
-        // ---- グラフ用データ作成 ----
-        const dailyCount = {};
-        for (let d of data) {
-          if (!d.timestamp) continue;
-          const date = d.timestamp.split(" ")[0];
-          dailyCount[date] = (dailyCount[date] || 0) + 1;
-        }
-        drawChart(dailyCount);
+        filterByDate(latest);
 
       } catch (e) {
         console.error("❌ データ取得エラー:", e);
       }
     }
 
-    // ---- 表描画 ----
-    function renderTable(dayData) {
+    // 指定日でフィルタ
+    function filterByDate(date) {
+      const filtered = allData.filter(d => d.timestamp.startsWith(date));
+      renderTable(filtered);
+      renderChart(filtered, date);
+    }
+
+    // 表表示
+    function renderTable(rows) {
       const tbody = document.querySelector("#data-table tbody");
       tbody.innerHTML = "";
 
-      dayData
+      rows
         .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
         .forEach(d => {
           const tr = document.createElement("tr");
           tr.innerHTML = `
-            <td>${d.timestamp || "-"}</td>
-            <td>${d.object_id || "-"}</td>
-            <td>${d.action || "-"}</td>
+            <td>${d.timestamp.split(" ")[1]}</td>
+            <td>${d.object_id}</td>
+            <td>${d.action}</td>
             <td>${d.zone_id || "-"}</td>
             <td>${d.zone_transition || "-"}</td>
             <td>${d.duration_sec ? parseFloat(d.duration_sec).toFixed(1) : "-"}</td>
@@ -221,23 +179,22 @@
         });
     }
 
-    // ---- グラフ描画 ----
-    function drawChart(dailyCount) {
-      const sortedDates = Object.keys(dailyCount).sort((a, b) => new Date(a) - new Date(b));
-      const sortedCounts = sortedDates.map(d => dailyCount[d]);
-
+    // グラフ
+    function renderChart(rows, date) {
       const ctx = document.getElementById("dailyChart").getContext("2d");
 
-      new Chart(ctx, {
+      const count = rows.length;
+
+      if (chart) chart.destroy();
+
+      chart = new Chart(ctx, {
         type: "bar",
         data: {
-          labels: sortedDates,
+          labels: [date],
           datasets: [{
-            label: "日別検知件数",
-            data: sortedCounts,
+            label: "検知件数",
+            data: [count],
             backgroundColor: "rgba(54, 162, 235, 0.6)",
-            borderColor: "rgba(54, 162, 235, 1)",
-            borderWidth: 1
           }]
         },
         options: {
@@ -246,6 +203,11 @@
         }
       });
     }
+
+    // カレンダーで日付選んだら更新
+    document.getElementById("datePicker").addEventListener("change", e => {
+      filterByDate(e.target.value);
+    });
 
     loadData();
   </script>
