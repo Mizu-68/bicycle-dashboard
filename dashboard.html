@@ -237,16 +237,24 @@
 
     // ---- 日付選択時 ----
     document.getElementById("datePicker").addEventListener("change", e => {
-      const date = e.target.value;
+  const date = e.target.value;
 
-      const filtered = allData.filter(d => d.timestamp.startsWith(date));
-      filtered.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  // 🔥 日付が空欄 → デフォルト表示に戻す
+  if (!date) {
+    renderTable(latest20());
+    renderActionSummaryChart(allData, "📈 検知種類ごとの件数（全期間）");
+    return;
+  }
 
-      renderTable(filtered);
+  // 🔥 日付あり → 指定日のデータ表示
+  const filtered = allData.filter(d => d.timestamp.startsWith(date));
+  filtered.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
-      // 種類別カウントグラフに変更
-      renderActionSummaryChart(filtered, `📈 ${date} の検知種類別件数`);
-    });
+  renderTable(filtered);
+
+  renderActionSummaryChart(filtered, `📈 ${date} の検知種類別件数`);
+});
+
 
     // Datelabels Plugin ロード
     const script = document.createElement("script");
