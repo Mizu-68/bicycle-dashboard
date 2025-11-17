@@ -36,13 +36,12 @@
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      flex-wrap: nowrap;
       gap: 20px;
     }
 
-    /* 左パネル（表）を広めにする */
+    /* 👇 左:右 = 40:60 に調整 */
     .left-panel {
-      flex: 1.2;
+      flex: 0.40;
       background: white;
       border-radius: 10px;
       box-shadow: 0 2px 6px rgba(0,0,0,0.1);
@@ -51,7 +50,7 @@
     }
 
     .right-panel {
-      flex: 1;
+      flex: 0.60;
       background: white;
       border-radius: 10px;
       box-shadow: 0 2px 6px rgba(0,0,0,0.1);
@@ -82,7 +81,7 @@
 
     canvas {
       width: 100% !important;
-      height: 350px !important;
+      height: 380px !important;
     }
   </style>
 </head>
@@ -98,10 +97,9 @@
 
   <div class="dashboard">
 
-    <!-- 左パネル（最新20件 or 選択日の表） -->
+    <!-- 左パネル（表） -->
     <div class="left-panel">
       <h2>📋 検知データ</h2>
-
       <table id="data-table">
         <thead>
           <tr>
@@ -131,36 +129,43 @@
     let allData = [];
     let chart = null;
 
-    // 初回データロード
+    // 🎨 共通の色
+    const actionColors = {
+      "STAYING": "rgba(54, 162, 235, 0.6)",
+      "LOITERING": "rgba(255, 99, 132, 0.6)",
+      "SQUATTING": "rgba(255, 206, 86, 0.6)",
+      "BENDING": "rgba(75, 192, 192, 0.6)"
+    };
+
+    // ---- 初回ロード ----
     async function loadData() {
       try {
         const res = await fetch(API_URL);
         allData = await res.json();
 
-        console.log("取得データ:", allData);
-
-        // 初回 → 最新20件表示
+        // 表：最新20件
         renderTable(latest20());
-        renderActionSummaryChart();
 
-        // カレンダーの初期値は最新日
+        // グラフ：全期間アクション別
+        renderActionSummaryChart(allData, "📈 検知種類ごとの件数（全期間）");
+
+        // カレンダーの初期値
         const dates = [...new Set(allData.map(d => d.timestamp.split(" ")[0]))];
-        const latest = dates.sort().reverse()[0];
-        document.getElementById("datePicker").value = latest;
+        document.getElementById("datePicker").value = dates.sort().reverse()[0];
 
       } catch (e) {
         console.error("❌ データ取得エラー:", e);
       }
     }
 
-    // 🟦 最新20件を取得（降順）
+    // ---- 最新20件 ----
     function latest20() {
       return allData
         .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
         .slice(0, 20);
     }
 
-    // 🔶 表更新
+    // ---- 表表示 ----
     function renderTable(rows) {
       const tbody = document.querySelector("#data-table tbody");
       tbody.innerHTML = "";
@@ -168,63 +173,69 @@
       rows.forEach(d => {
         const tr = document.createElement("tr");
         tr.innerHTML = `
-            <td>${d.timestamp}</td>
-            <td>${d.object_id}</td>
-            <td>${d.action}</td>
-            <td>${d.zone_id || "-"}</td>
-            <td>${d.zone_transition || "-"}</td>
-            <td>${d.duration_sec ? parseFloat(d.duration_sec).toFixed(1) : "-"}</td>
-            <td>${d.direction || "-"}</td>
-        `;
+          <td>${d.timestamp}</td>
+          <td>${d.object_id}</td>
+          <td>${d.action}</td>
+          <td>${d.zone_id || "-"}</td>
+          <td>${d.zone_transition || "-"}</td>
+          <td>${d.duration_sec ? parseFloat(d.duration_sec).toFixed(1) : "-"}</td>
+          <td>${d.direction || "-"}</td>`;
         tbody.appendChild(tr);
       });
     }
 
-    // 🔷 全期間の「検知種類ごとの件数」棒グラフ
-    function renderActionSummaryChart() {
-      const counts = {};
-
-      allData.forEach(d => {
-        counts[d.action] = (counts[d.action] || 0) + 1;
-      });
-
-      const actions = Object.keys(counts);
-      const values = Object.values(counts);
-
+    // ---- アクション別集計グラフ（全期間 or 日付別） ----
+    function renderActionSummaryChart(rows, title) {
       const ctx = document.getElementById("dailyChart").getContext("2d");
 
       if (chart) chart.destroy();
 
-      document.getElementById("chart-title").innerText =
-        "📈 検知種類ごとの件数（全期間）";
+      // アクション別カウント
+      const counts = {};
+      rows.forEach(d => {
+        counts[d.action] = (counts[d.action] || 0) + 1;
+      });
+
+      const labels = Object.keys(counts);
+      const values = Object.values(counts);
+      const bgColors = labels.map(a => actionColors[a] || "rgba(100,100,100,0.6)");
+
+      document.getElementById("chart-title").innerText = title;
 
       chart = new Chart(ctx, {
         type: "bar",
         data: {
-          labels: actions,
+          labels,
           datasets: [{
             label: "件数",
             data: values,
-            backgroundColor: [
-              "rgba(255, 99, 132, 0.6)",
-              "rgba(54, 162, 235, 0.6)",
-              "rgba(255, 206, 86, 0.6)",
-              "rgba(75, 192, 192, 0.6)"
-            ]
+            backgroundColor: bgColors
           }]
         },
         options: {
+          responsive: true,
+          plugins: {
+            legend: { display: false },
+            tooltip: { enabled: true },
+            // ⭐ 棒の上にラベルを追加
+            datalabels: {
+              anchor: "end",
+              align: "top",
+              formatter: v => v
+            }
+          },
           scales: {
             y: {
               beginAtZero: true,
-              ticks: { stepSize: 1 }   // ← 小数点なし
+              ticks: { stepSize: 1 }
             }
           }
-        }
+        },
+        plugins: [ChartDataLabels] // ← ラベル表示
       });
     }
 
-    // 📅 カレンダー変更 → その日のデータ表示
+    // ---- 日付選択時 ----
     document.getElementById("datePicker").addEventListener("change", e => {
       const date = e.target.value;
 
@@ -233,40 +244,17 @@
 
       renderTable(filtered);
 
-      renderDailyCountChart(filtered, date);
+      // 種類別カウントグラフに変更
+      renderActionSummaryChart(filtered, `📈 ${date} の検知種類別件数`);
     });
 
-    // 🔷 選択日の件数グラフ
-    function renderDailyCountChart(rows, date) {
-      const ctx = document.getElementById("dailyChart").getContext("2d");
+    // Datelabels Plugin ロード
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2";
+    script.onload = () => loadData();
+    document.body.appendChild(script);
 
-      if (chart) chart.destroy();
-
-      document.getElementById("chart-title").innerText =
-        `📈 ${date} の検知件数`;
-
-      chart = new Chart(ctx, {
-        type: "bar",
-        data: {
-          labels: [date],
-          datasets: [{
-            label: "件数",
-            data: [rows.length],
-            backgroundColor: "rgba(54, 162, 235, 0.6)"
-          }]
-        },
-        options: {
-          scales: {
-            y: {
-              beginAtZero: true,
-              ticks: { stepSize: 1 }  // 小数点なし
-            }
-          }
-        }
-      });
-    }
-
-    loadData();
   </script>
+
 </body>
 </html>
