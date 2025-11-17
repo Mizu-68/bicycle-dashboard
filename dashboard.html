@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>不審行動検知ダッシュボード</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
   <style>
     body {
       font-family: "Segoe UI", sans-serif;
@@ -35,27 +36,27 @@
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
+      gap: 20px;
     }
 
+    /* 左パネル（表）を広めにする */
     .left-panel {
-      flex: 1;
-      margin-right: 30px;
+      flex: 1.2;
       background: white;
       border-radius: 10px;
       box-shadow: 0 2px 6px rgba(0,0,0,0.1);
       padding: 15px;
-      max-width: 450px;
-      min-width: 320px;
+      min-width: 350px;
     }
 
     .right-panel {
-      flex: 2;
+      flex: 1;
       background: white;
       border-radius: 10px;
       box-shadow: 0 2px 6px rgba(0,0,0,0.1);
       padding: 20px;
-      min-width: 400px;
+      min-width: 350px;
     }
 
     table {
@@ -97,14 +98,14 @@
 
   <div class="dashboard">
 
-    <!-- 左パネル（表） -->
+    <!-- 左パネル（最新20件 or 選択日の表） -->
     <div class="left-panel">
       <h2>📋 検知データ</h2>
 
       <table id="data-table">
         <thead>
           <tr>
-            <th>時刻</th>
+            <th>日時</th>
             <th>ID</th>
             <th>動作</th>
             <th>ゾーン</th>
@@ -119,7 +120,7 @@
 
     <!-- 右パネル（グラフ） -->
     <div class="right-panel">
-      <h2>📈 選択日の件数</h2>
+      <h2 id="chart-title">📈 検知種類ごとの件数（全期間）</h2>
       <canvas id="dailyChart"></canvas>
     </div>
 
@@ -136,78 +137,134 @@
         const res = await fetch(API_URL);
         allData = await res.json();
 
-        console.log("データ取得:", allData);
+        console.log("取得データ:", allData);
 
-        // 最新日を初期選択
+        // 初回 → 最新20件表示
+        renderTable(latest20());
+        renderActionSummaryChart();
+
+        // カレンダーの初期値は最新日
         const dates = [...new Set(allData.map(d => d.timestamp.split(" ")[0]))];
         const latest = dates.sort().reverse()[0];
         document.getElementById("datePicker").value = latest;
-
-        filterByDate(latest);
 
       } catch (e) {
         console.error("❌ データ取得エラー:", e);
       }
     }
 
-    // 指定日でフィルタ
-    function filterByDate(date) {
-      const filtered = allData.filter(d => d.timestamp.startsWith(date));
-      renderTable(filtered);
-      renderChart(filtered, date);
+    // 🟦 最新20件を取得（降順）
+    function latest20() {
+      return allData
+        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+        .slice(0, 20);
     }
 
-    // 表表示
+    // 🔶 表更新
     function renderTable(rows) {
       const tbody = document.querySelector("#data-table tbody");
       tbody.innerHTML = "";
 
-      rows
-        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-        .forEach(d => {
-          const tr = document.createElement("tr");
-          tr.innerHTML = `
-            <td>${d.timestamp.split(" ")[1]}</td>
+      rows.forEach(d => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td>${d.timestamp}</td>
             <td>${d.object_id}</td>
             <td>${d.action}</td>
             <td>${d.zone_id || "-"}</td>
             <td>${d.zone_transition || "-"}</td>
             <td>${d.duration_sec ? parseFloat(d.duration_sec).toFixed(1) : "-"}</td>
             <td>${d.direction || "-"}</td>
-          `;
-          tbody.appendChild(tr);
-        });
+        `;
+        tbody.appendChild(tr);
+      });
     }
 
-    // グラフ
-    function renderChart(rows, date) {
+    // 🔷 全期間の「検知種類ごとの件数」棒グラフ
+    function renderActionSummaryChart() {
+      const counts = {};
+
+      allData.forEach(d => {
+        counts[d.action] = (counts[d.action] || 0) + 1;
+      });
+
+      const actions = Object.keys(counts);
+      const values = Object.values(counts);
+
       const ctx = document.getElementById("dailyChart").getContext("2d");
 
-      const count = rows.length;
+      if (chart) chart.destroy();
+
+      document.getElementById("chart-title").innerText =
+        "📈 検知種類ごとの件数（全期間）";
+
+      chart = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels: actions,
+          datasets: [{
+            label: "件数",
+            data: values,
+            backgroundColor: [
+              "rgba(255, 99, 132, 0.6)",
+              "rgba(54, 162, 235, 0.6)",
+              "rgba(255, 206, 86, 0.6)",
+              "rgba(75, 192, 192, 0.6)"
+            ]
+          }]
+        },
+        options: {
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { stepSize: 1 }   // ← 小数点なし
+            }
+          }
+        }
+      });
+    }
+
+    // 📅 カレンダー変更 → その日のデータ表示
+    document.getElementById("datePicker").addEventListener("change", e => {
+      const date = e.target.value;
+
+      const filtered = allData.filter(d => d.timestamp.startsWith(date));
+      filtered.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+      renderTable(filtered);
+
+      renderDailyCountChart(filtered, date);
+    });
+
+    // 🔷 選択日の件数グラフ
+    function renderDailyCountChart(rows, date) {
+      const ctx = document.getElementById("dailyChart").getContext("2d");
 
       if (chart) chart.destroy();
+
+      document.getElementById("chart-title").innerText =
+        `📈 ${date} の検知件数`;
 
       chart = new Chart(ctx, {
         type: "bar",
         data: {
           labels: [date],
           datasets: [{
-            label: "検知件数",
-            data: [count],
-            backgroundColor: "rgba(54, 162, 235, 0.6)",
+            label: "件数",
+            data: [rows.length],
+            backgroundColor: "rgba(54, 162, 235, 0.6)"
           }]
         },
         options: {
-          responsive: true,
-          scales: { y: { beginAtZero: true } }
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { stepSize: 1 }  // 小数点なし
+            }
+          }
         }
       });
     }
-
-    // カレンダーで日付選んだら更新
-    document.getElementById("datePicker").addEventListener("change", e => {
-      filterByDate(e.target.value);
-    });
 
     loadData();
   </script>
