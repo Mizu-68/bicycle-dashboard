@@ -167,22 +167,24 @@
 
     // ---- 表表示 ----
     function renderTable(rows) {
-      const tbody = document.querySelector("#data-table tbody");
-      tbody.innerHTML = "";
+  const tbody = document.querySelector("#data-table tbody");
+  tbody.innerHTML = "";
 
-      rows.forEach(d => {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${d.timestamp}</td>
-          <td>${d.object_id}</td>
-          <td>${d.action}</td>
-          <td>${d.zone_id || "-"}</td>
-          <td>${d.zone_transition || "-"}</td>
-          <td>${d.duration_sec ? parseFloat(d.duration_sec).toFixed(1) : "-"}</td>
-          <td>${d.direction || "-"}</td>`;
-        tbody.appendChild(tr);
-      });
-    }
+  rows.forEach(d => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${d.timestamp}</td>
+      <td>${d.object_id}</td>
+      <td>${d.action}</td>
+      <td>${d.zone_id ?? ""}</td>
+      <td>${d.zone_transition ?? ""}</td>
+      <td>${d.duration_sec ? parseFloat(d.duration_sec).toFixed(1) : ""}</td>
+      <td>${d.direction ?? ""}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
 
     // ---- アクション別集計グラフ（全期間 or 日付別） ----
     function renderActionSummaryChart(rows, title) {
