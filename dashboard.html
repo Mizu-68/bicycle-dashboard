@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>不審行動検知ダッシュボード</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
   <style>
     body {
       font-family: "Segoe UI", sans-serif;
@@ -13,381 +13,185 @@
       margin: 0;
       padding: 20px;
     }
-
-    #data-table td {
-      font-weight: bold;
-    }
-
-    h1 {
-      text-align: center;
-      margin-bottom: 20px;
-      color: #333;
-    }
-
-    .top-controls {
-      text-align: center;
-      margin-bottom: 25px;
-    }
-
+    #data-table td { font-weight: bold; }
+    h1 { text-align: center; margin-bottom: 20px; color: #333; }
+    .top-controls { text-align: center; margin-bottom: 25px; }
     input[type="date"] {
-      padding: 8px 12px;
-      border: 1px solid #bbb;
-      border-radius: 6px;
-      font-size: 16px;
+      padding: 8px 12px; border: 1px solid #bbb; border-radius: 6px; font-size: 16px;
     }
-
-    .dashboard {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 20px;
-    }
-
-    /* 👇 左:右 = 40:60 に調整 */
+    .dashboard { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
     .left-panel {
-      flex: 0.43;
-      background: white;
-      border-radius: 10px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-      padding: 15px;
-      min-width: 350px;
+      flex: 0.43; background: white; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      padding: 15px; min-width: 350px;
     }
-
     .right-panel {
-      flex: 0.57;
-      background: white;
-      border-radius: 10px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-      padding: 20px;
-      min-width: 350px;
+      flex: 0.57; background: white; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      padding: 20px; min-width: 350px;
     }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-    }
-
-    th, td {
-      border-bottom: 1px solid #ddd;
-      padding: 6px;
-      text-align: center;
-    }
-
-    th {
-      background: #f0f0f0;
-      font-weight: 600;
-    }
-
-    tr:hover {
-      background: #f9f9f9;
-    }
-
-    canvas {
-      width: 100% !important;
-      height: 380px !important;
-    }
-
-    /* 小さいスクリーンで崩れないように */
-    @media (max-width: 900px) {
-      .dashboard { flex-direction: column; }
-      .left-panel, .right-panel { min-width: unset; }
-    }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { border-bottom: 1px solid #ddd; padding: 6px; text-align: center; }
+    th { background: #f0f0f0; font-weight: 600; }
+    tr:hover { background: #f9f9f9; }
+    canvas { width: 100% !important; height: 330px !important; }
+    .subchart { margin-top: 35px; }
   </style>
 </head>
 <body>
-
   <h1>🚲 不審行動検知ダッシュボード</h1>
 
-  <!-- 日付選択 -->
   <div class="top-controls">
     <label>📅 日付を選択：</label>
     <input type="date" id="datePicker">
   </div>
 
   <div class="dashboard">
-
-    <!-- 左：表 -->
     <div class="left-panel">
       <h2>📋 検知データ</h2>
       <table id="data-table">
         <thead>
           <tr>
-            <th>日時</th>
-            <th>ID</th>
-            <th>動作</th>
-            <th>ゾーン</th>
-            <th>移動</th>
-            <th>時間(s)</th>
-            <th>方向</th>
+            <th>日時</th><th>ID</th><th>動作</th><th>ゾーン</th>
+            <th>移動</th><th>時間(s)</th><th>方向</th>
           </tr>
         </thead>
         <tbody></tbody>
       </table>
     </div>
 
-    <!-- 右：グラフ群 -->
     <div class="right-panel">
       <h2 id="chart-title">📈 検知種類ごとの件数（全期間）</h2>
       <canvas id="dailyChart"></canvas>
 
-      <!-- 曜日別グラフ（アクション別の積み上げ棒） -->
-      <h3 id="weekday-title" style="margin-top:18px;">📊 曜日別（全期間）</h3>
+      <h2 class="subchart">📊 曜日別検知数</h2>
       <canvas id="weekdayChart"></canvas>
-    </div>
 
+      <h2 class="subchart">⏱ 時間帯別検知数</h2>
+      <canvas id="timeChart"></canvas>
+    </div>
   </div>
 
-  <script>
-    const API_URL = "https://z07k43psfl.execute-api.ap-northeast-1.amazonaws.com/";
-    let allData = [];
-    let chartAction = null;
-    let chartWeekday = null;
+<script>
+const API_URL = "https://z07k43psfl.execute-api.ap-northeast-1.amazonaws.com/";
+let allData = [];
+let chart = null, weekdayChart = null, timeChart = null;
 
-    // 色は既存と統一
-    const actionColors = {
-      "STAYING": "rgba(54, 162, 235, 0.6)",
-      "LOITERING": "rgba(255, 99, 132, 0.6)",
-      "SQUATTING": "rgba(255, 206, 86, 0.6)",
-      "BENDING": "rgba(75, 192, 192, 0.6)"
-    };
+const actionColors = {
+  "STAYING": "rgba(54,162,235,0.6)",
+  "LOITERING": "rgba(255,99,132,0.6)",
+  "SQUATTING": "rgba(255,206,86,0.6)",
+  "BENDING": "rgba(75,192,192,0.6)"
+};
 
-    // ヘルパー: yyy-mm-dd 文字列
-    function dateToYMD(d) {
-      const yyyy = d.getFullYear();
-      const mm = String(d.getMonth() + 1).padStart(2, "0");
-      const dd = String(d.getDate()).padStart(2, "0");
-      return `${yyyy}-${mm}-${dd}`;
-    }
+async function loadData() {
+  const res = await fetch(API_URL);
+  allData = await res.json();
+  renderTable(latest20());
+  renderActionSummaryChart(allData, "📈 検知種類ごとの件数（全期間）");
+  renderWeekdayChart(allData);
+  renderTimeChart(allData);
+}
 
-    // 指定日の週（日曜始まり）の開始日（Dateオブジェクト）を返す
-    function weekStartSunday(date) {
-      const d = new Date(date);
-      const day = d.getDay(); // 0=日 ... 6=土
-      const start = new Date(d);
-      start.setDate(d.getDate() - day);
-      start.setHours(0,0,0,0);
-      return start;
-    }
+function latest20() {
+  return allData.sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp)).slice(0,20);
+}
 
-    // 指定日の週（日曜始まり）に含まれるデータを抽出（dateは "YYYY-MM-DD" or Date）
-    function getDataForWeekContaining(dateStrOrDate) {
-      const d = (typeof dateStrOrDate === "string") ? new Date(dateStrOrDate) : new Date(dateStrOrDate);
-      const start = weekStartSunday(d);
-      const end = new Date(start);
-      end.setDate(start.getDate() + 6);
-      // compare by YYYY-MM-DD strings to avoid timezone pitfalls
-      const s = dateToYMD(start);
-      const e = dateToYMD(end);
-      return allData.filter(item => {
-        if (!item.timestamp) return false;
-        const ymd = item.timestamp.split(" ")[0];
-        return ymd >= s && ymd <= e;
-      });
-    }
+function renderTable(rows){
+  const tbody=document.querySelector("#data-table tbody");
+  tbody.innerHTML="";
+  rows.forEach(d=>{
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td>${d.timestamp}</td><td>${d.object_id}</td><td>${d.action}</td>
+    <td>${d.zone_id??""}</td><td>${d.zone_transition??""}</td>
+    <td>${d.duration_sec?parseFloat(d.duration_sec).toFixed(1):""}</td>
+    <td>${d.direction??""}</td>`;
+    tbody.appendChild(tr);
+  });
+}
 
-    // ---- 初回ロード ----
-    async function loadData() {
-      try {
-        const res = await fetch(API_URL);
-        allData = await res.json();
+function renderActionSummaryChart(rows,title){
+  const ctx=document.getElementById("dailyChart").getContext("2d");
+  if(chart) chart.destroy();
 
-        // 表：最新20件
-        renderTable(latest20());
+  const counts={};
+  rows.forEach(d=>counts[d.action]=(counts[d.action]||0)+1);
 
-        // グラフ：全期間アクション別
-        renderActionSummaryChart(allData, "📈 検知種類ごとの件数（全期間）");
+  chart=new Chart(ctx,{
+    type:"bar",
+    data:{ labels:Object.keys(counts), datasets:[{
+      label:"件数", data:Object.values(counts), backgroundColor:Object.keys(counts).map(a=>actionColors[a])
+    }]},
+    options:{ responsive:true, plugins:{ legend:{display:false}, datalabels:{anchor:"end",align:"top"} },
+      scales:{ y:{beginAtZero:true,ticks:{stepSize:1}} } }, plugins:[ChartDataLabels]
+  });
+  document.getElementById("chart-title").innerText=title;
+}
 
-        // 曜日グラフ（デフォルトは全期間）
-        renderWeekdayStackedChart(allData, "📊 曜日別（全期間）");
+function renderWeekdayChart(rows){
+  const ctx=document.getElementById("weekdayChart").getContext("2d");
+  if(weekdayChart) weekdayChart.destroy();
 
-        // カレンダーの初期値：最新日（存在すれば）
-        const dates = [...new Set(allData.map(d => d.timestamp && d.timestamp.split(" ")[0]).filter(Boolean))];
-        if (dates.length > 0) {
-          document.getElementById("datePicker").value = dates.sort().reverse()[0];
-        } else {
-          document.getElementById("datePicker").value = "";
-        }
+  const days=["日","月","火","水","木","金","土"];
+  const counts={}; rows.forEach(d=>{
+    const wd=new Date(d.timestamp).getDay();
+    const key=`${wd}-${d.action}`;
+    counts[key]=(counts[key]||0)+1;
+  });
 
-      } catch (e) {
-        console.error("❌ データ取得エラー:", e);
-      }
-    }
+  const datasets=[];
+  Object.keys(actionColors).forEach(a=>{
+    const data=[];
+    for(let i=0;i<7;i++){ data.push(counts[`${i}-${a}`]||0); }
+    datasets.push({ label:a, data, backgroundColor:actionColors[a] });
+  });
 
-    // 最新20件取得
-    function latest20() {
-      return allData
-        .slice()
-        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-        .slice(0, 20);
-    }
+  weekdayChart=new Chart(ctx,{
+    type:"bar",
+    data:{ labels:days, datasets },
+    options:{ responsive:true, plugins:{ datalabels:{anchor:"end",align:"top"} },
+      scales:{ y:{beginAtZero:true,ticks:{stepSize:1}} } }, plugins:[ChartDataLabels]
+  });
+}
 
-    // 表描画（空欄は "" にしてスッキリ）
-    function renderTable(rows) {
-      const tbody = document.querySelector("#data-table tbody");
-      tbody.innerHTML = "";
-      rows.forEach(d => {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${d.timestamp ?? ""}</td>
-          <td>${d.object_id ?? ""}</td>
-          <td>${d.action ?? ""}</td>
-          <td>${d.zone_id ?? ""}</td>
-          <td>${d.zone_transition ?? ""}</td>
-          <td>${d.duration_sec ? parseFloat(d.duration_sec).toFixed(1) : ""}</td>
-          <td>${d.direction ?? ""}</td>
-        `;
-        tbody.appendChild(tr);
-      });
-    }
+function renderTimeChart(rows){
+  const ctx=document.getElementById("timeChart").getContext("2d");
+  if(timeChart) timeChart.destroy();
 
-    // アクション別サマリ（既存グラフ）
-    function renderActionSummaryChart(rows, title) {
-      const ctx = document.getElementById("dailyChart").getContext("2d");
-      if (chartAction) chartAction.destroy();
+  const labels=["0-3","3-6","6-9","9-12","12-15","15-18","18-21","21-24"];
 
-      // アクション別カウント
-      const counts = {};
-      rows.forEach(d => {
-        counts[d.action] = (counts[d.action] || 0) + 1;
-      });
+  const counts={}; rows.forEach(d=>{
+    const h=new Date(d.timestamp).getHours();
+    const bin=Math.floor(h/3);
+    const key=`${bin}-${d.action}`;
+    counts[key]=(counts[key]||0)+1;
+  });
 
-      const labels = Object.keys(counts);
-      const values = Object.values(counts);
-      const bgColors = labels.map(a => actionColors[a] || "rgba(100,100,100,0.6)");
+  const datasets=[];
+  Object.keys(actionColors).forEach(a=>{
+    const data=[];
+    for(let i=0;i<8;i++) data.push(counts[`${i}-${a}`]||0);
+    datasets.push({ label:a, data, backgroundColor:actionColors[a] });
+  });
 
-      document.getElementById("chart-title").innerText = title;
+  timeChart=new Chart(ctx,{
+    type:"bar",
+    data:{ labels, datasets },
+    options:{ responsive:true, plugins:{ datalabels:{anchor:"end",align:"top"} },
+      scales:{ y:{beginAtZero:true,ticks:{stepSize:1}} } }, plugins:[ChartDataLabels]
+  });
+}
 
-      chartAction = new Chart(ctx, {
-        type: "bar",
-        data: {
-          labels,
-          datasets: [{
-            label: "件数",
-            data: values,
-            backgroundColor: bgColors
-          }]
-        },
-        options: {
-          responsive: true,
-          plugins: {
-            legend: { display: false },
-            tooltip: { enabled: true },
-            datalabels: {
-              anchor: "end",
-              align: "top",
-              formatter: v => v
-            }
-          },
-          scales: {
-            y: {
-              beginAtZero: true,
-              ticks: { stepSize: 1 }
-            }
-          }
-        },
-        plugins: [ChartDataLabels]
-      });
-    }
+document.getElementById("datePicker").addEventListener("change", e=>{
+  const date=e.target.value;
+  if(!date){ renderTable(latest20()); renderActionSummaryChart(allData,"📈 検知種類ごとの件数（全期間）"); renderWeekdayChart(allData); renderTimeChart(allData); return; }
+  const filtered=allData.filter(d=>d.timestamp.startsWith(date));
+  renderTable(filtered);
+  renderActionSummaryChart(filtered,`📈 ${date} の検知種類別件数`);
+  renderWeekdayChart(filtered);
+  renderTimeChart(filtered);
+});
 
-    // 曜日別積み上げ棒グラフ（rowsは対象データ群：全期間 or 週データ）
-    function renderWeekdayStackedChart(rows, title) {
-      const ctx = document.getElementById("weekdayChart").getContext("2d");
-      if (chartWeekday) chartWeekday.destroy();
-
-      // 初期化：曜日0(日)〜6(土)
-      const weekdays = ["日","月","火","水","木","金","土"];
-      // actions set (ensure consistent order)
-      const actions = Object.keys(actionColors);
-
-      // build counts[action][weekdayIndex]
-      const counts = {};
-      actions.forEach(a => counts[a] = Array(7).fill(0));
-
-      rows.forEach(d => {
-        if (!d.timestamp || !d.action) return;
-        const dt = new Date(d.timestamp);
-        const wd = dt.getDay(); // 0=日
-        if (!counts[d.action]) counts[d.action] = Array(7).fill(0);
-        counts[d.action][wd] += 1;
-      });
-
-      // datasets in same action order
-      const datasets = actions.map(a => ({
-        label: a,
-        data: counts[a],
-        backgroundColor: actionColors[a] || "rgba(120,120,120,0.6)"
-      }));
-
-      // title for weekday chart
-      document.getElementById("weekday-title").innerText = title;
-
-      chartWeekday = new Chart(ctx, {
-        type: "bar",
-        data: {
-          labels: weekdays, // 日曜スタート
-          datasets: datasets
-        },
-        options: {
-          responsive: true,
-          plugins: {
-            legend: { display: true, position: 'top' },
-            tooltip: { mode: 'index', intersect: false },
-            datalabels: {
-              color: '#000',
-              formatter: v => (v ? v : ''),
-              anchor: 'center',
-              align: 'center'
-            }
-          },
-          scales: {
-            x: { stacked: true },
-            y: {
-              stacked: true,
-              beginAtZero: true,
-              ticks: { stepSize: 1 }
-            }
-          }
-        },
-        plugins: [ChartDataLabels]
-      });
-    }
-
-    // カレンダー選択イベント
-    document.getElementById("datePicker").addEventListener("change", e => {
-      const date = e.target.value;
-      if (!date) {
-        // クリア → デフォルトに戻す
-        renderTable(latest20());
-        renderActionSummaryChart(allData, "📈 検知種類ごとの件数（全期間）");
-        renderWeekdayStackedChart(allData, "📊 曜日別（全期間）");
-        return;
-      }
-
-      // 選択日のデータ表示（表はその日の全検知）
-      const filteredDay = allData.filter(d => d.timestamp && d.timestamp.startsWith(date));
-      filteredDay.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
-      renderTable(filteredDay);
-
-      // 曜日グラフは「選択日の週（日曜〜土曜）」で再集計
-      const weekRows = getDataForWeekContaining(date);
-      renderWeekdayStackedChart(weekRows, `📊 ${date} を含む週（日→土）の件数`);
-      // なおアクション別グラフは選択日に連動させる（その日のアクション内訳を表示）
-      renderActionSummaryChart(filteredDay, `📈 ${date} の検知種類別件数`);
-    });
-
-    // ChartDataLabels を CDN からロードしてから初期化
-    const dlScript = document.createElement("script");
-    dlScript.src = "https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2";
-    dlScript.onload = () => {
-      // Register plugin (Chart.js 3+)
-      Chart.register(ChartDataLabels);
-      // Now load data
-      loadData();
-    };
-    document.body.appendChild(dlScript);
-
-  </script>
+loadData();
+</script>
 
 </body>
 </html>
