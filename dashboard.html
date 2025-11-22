@@ -182,11 +182,31 @@ function renderTimeChart(rows){
 
 document.getElementById("datePicker").addEventListener("change", e=>{
   const date=e.target.value;
-  if(!date){ renderTable(latest20()); renderActionSummaryChart(allData,"📈 検知種類ごとの件数（全期間）"); renderWeekdayChart(allData); renderTimeChart(allData); return; }
-  const filtered=allData.filter(d=>d.timestamp.startsWith(date));
+  if(!date){
+    renderTable(latest20());
+    renderActionSummaryChart(allData,"📈 検知種類ごとの件数（全期間）");
+    renderWeekdayChart(allData);
+    renderTimeChart(allData);
+    return;
+  }
+
+  // 🔥 指定日を含む "週" を抽出（日曜始まり）
+  const base = new Date(date);
+  const wd = base.getDay();
+  const weekStart = new Date(base);
+  weekStart.setDate(base.getDate() - wd);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 7);
+
+  const weekRows = allData.filter(d=>{
+    const t=new Date(d.timestamp);
+    return t>=weekStart && t<weekEnd;
+  });
+
+  const filtered = allData.filter(d=>d.timestamp.startsWith(date));
   renderTable(filtered);
   renderActionSummaryChart(filtered,`📈 ${date} の検知種類別件数`);
-  renderWeekdayChart(filtered);
+  renderWeekdayChart(weekRows);
   renderTimeChart(filtered);
 });
 
